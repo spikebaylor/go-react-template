@@ -1,0 +1,28 @@
+# The combined image beside a Postgres: `just up` to try a build, and what
+# `just e2e` tests. APP_IMAGE picks the image (default: the one `just image` built).
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "app"]
+      interval: 1s
+      retries: 30
+
+  # Not named "app": Chromium forces HTTPS on that host, as .app is an HSTS-preloaded TLD.
+  server:
+    image: ${APP_IMAGE:-app:dev}
+    environment:
+      APP_DATABASE_URL: postgres://app:app@db:5432/app?sslmode=disable
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    # distroless has no shell or curl, so compose can't probe it; `just up`
+    # waits on /api/health from outside instead.
