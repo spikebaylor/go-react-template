@@ -8,9 +8,11 @@ on:
   schedule:
     - cron: "17 4 * * 1" # weekly
   workflow_dispatch:
-
-concurrency:
-  group: cleanup-images
+    inputs:
+      pr:
+        description: Delete this PR's images instead of pruning main builds (to redo a failed PR cleanup)
+        type: number
+        required: false
 
 permissions:
   packages: write
@@ -20,25 +22,35 @@ jobs:
     # A fork's PR never pushed images, and its token couldn't delete them.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # One job per package, so GitHub refusing a deletion in one (it won't delete
+    # some versions of public packages, and says so only when asked) leaves the
+    # others cleaned.
+    strategy:
+      fail-fast: false
+      matrix:
+        suffix: ["", "-api", "-web"]
+    concurrency:
+      group: cleanup-images${{ matrix.suffix }}
+    env:
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
     steps:
-      - id: packages
+      - id: package
         run: |
           name=${GITHUB_REPOSITORY#*/}
-          name=${name,,}
-          echo "list=$name,$name-api,$name-web" >> "$GITHUB_OUTPUT"
+          echo "name=${name,,}${{ matrix.suffix }}" >> "$GITHUB_OUTPUT"
 
-      - name: Delete the closed PR's images
-        if: github.event_name == 'pull_request'
+      - name: Delete the PR's images
+        if: env.PR != ''
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          packages: ${{ steps.packages.outputs.list }}
-          delete-tags: pr-${{ github.event.pull_request.number }},*-pr.${{ github.event.pull_request.number }}.*
+          package: ${{ steps.package.outputs.name }}
+          delete-tags: pr-${{ env.PR }},*-pr.${{ env.PR }}.*
 
       - name: Keep the 20 newest main builds
-        if: github.event_name != 'pull_request'
+        if: env.PR == ''
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          packages: ${{ steps.packages.outputs.list }}
+          package: ${{ steps.package.outputs.name }}
           use-regex: true
           # An image goes once all its tags do, so take each main build's sha- tag too.
           delete-tags: ^(\d+\.\d+\.\d+-dev\.\d+|sha-[0-9a-f]+)$
