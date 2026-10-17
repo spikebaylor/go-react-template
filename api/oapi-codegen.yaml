@@ -1,0 +1,7 @@
+# Generates internal/api from api/openapi.yaml. Run through `just generate`.
+package: api
+output: internal/api/api.gen.go
+generate:
+  std-http-server: true
+  strict-server: true
+  models: true

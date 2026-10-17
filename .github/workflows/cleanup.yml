@@ -1,0 +1,47 @@
+# Keeps the registry from filling with pre-release images. Releases are never
+# touched: a tag that's also on a release only loses that tag, the image stays.
+name: Clean up images
+
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "17 4 * * 1" # weekly
+  workflow_dispatch:
+
+concurrency:
+  group: cleanup-images
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    # A fork's PR never pushed images, and its token couldn't delete them.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - id: packages
+        run: |
+          name=${GITHUB_REPOSITORY#*/}
+          name=${name,,}
+          echo "list=$name,$name-api,$name-web" >> "$GITHUB_OUTPUT"
+
+      - name: Delete the closed PR's images
+        if: github.event_name == 'pull_request'
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          packages: ${{ steps.packages.outputs.list }}
+          delete-tags: pr-${{ github.event.pull_request.number }},*-pr.${{ github.event.pull_request.number }}.*
+
+      - name: Keep the 20 newest main builds
+        if: github.event_name != 'pull_request'
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          packages: ${{ steps.packages.outputs.list }}
+          use-regex: true
+          # An image goes once all its tags do, so take each main build's sha- tag too.
+          delete-tags: ^(\d+\.\d+\.\d+-dev\.\d+|sha-[0-9a-f]+)$
+          keep-n-tagged: 20
+          exclude-tags: ^(\d+\.\d+\.\d+|\d+\.\d+|latest|dev)$
+          delete-untagged: true

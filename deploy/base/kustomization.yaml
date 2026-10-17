@@ -1,0 +1,16 @@
+# The app's deployment shape: what the code needs to run, changed in the same
+# PR as the code that needs it. It names images by logical name only (app,
+# app-api, app-web); whoever deploys binds them to a registry and digest with
+# an `images:` block in their overlay, so no build ever edits these files.
+#
+# Environment-specific settings (replicas, resources, hosts, secrets) belong in
+# the deploying overlay, not here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/name: app
+    includeSelectors: true
+resources:
+  - deployment.yaml
+  - service.yaml

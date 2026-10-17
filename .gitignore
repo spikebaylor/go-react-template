@@ -1,0 +1,5 @@
+# Build and check output
+/out/
+/app
+internal/webui/dist/*
+!internal/webui/dist/.gitkeep

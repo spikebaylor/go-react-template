@@ -1,0 +1,94 @@
+# Release: run by hand from the Actions tab. It promotes the images main's CI
+# already built and tested for the head of main; nothing is rebuilt, so the
+# release is byte for byte what was tested. Run it with dry_run first to see
+# the version and notes it would publish.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Show what would be released, without releasing it
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - uses: extractions/setup-just@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: plan
+        name: Work out the version and find the tested images
+        run: |
+          version=$(just version)   # fails when nothing since the last release warrants one
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::v$version is already tagged"; exit 1
+          fi
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          from="sha-${GITHUB_SHA::7}"
+          # CI adds the sha- tag only after the e2e tests pass on that image.
+          if ! docker buildx imagetools inspect "$image:$from" >/dev/null 2>&1; then
+            echo "::error::no tested image $image:$from: main's CI for ${GITHUB_SHA::7} is still running, or failed"
+            exit 1
+          fi
+          major_minor=$(echo "$version" | cut -d. -f1,2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "from=$from" >> "$GITHUB_OUTPUT"
+          echo "tags=$version,$major_minor,latest" >> "$GITHUB_OUTPUT"
+
+      - name: Preview release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          FROM: ${{ steps.plan.outputs.image }}:${{ steps.plan.outputs.from }}
+          TAGS: ${{ steps.plan.outputs.tags }}
+        run: |
+          {
+            echo "## v$VERSION"
+            echo "Promotes \`$FROM\` to tags \`$TAGS\`."
+            echo
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="v$VERSION" -f target_commitish="$GITHUB_SHA" --jq .body
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Promote the images
+        if: ${{ !inputs.dry_run }}
+        env:
+          IMAGE: ${{ steps.plan.outputs.image }}
+        run: just retag "${{ steps.plan.outputs.from }}" "${{ steps.plan.outputs.tags }}"
+
+      # Tagged only once the images are promoted, so a tag always has images.
+      - name: Tag and publish the release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          git tag "v$VERSION" "$GITHUB_SHA"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" --verify-tag --title "v$VERSION" --generate-notes

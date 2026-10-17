@@ -1,0 +1,9 @@
+-- +goose Up
+CREATE TABLE notes (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    text       TEXT        NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- +goose Down
+DROP TABLE notes;

@@ -1,0 +1,145 @@
+# Every PR and every push to main: verify, build and push the images once,
+# test the pushed image end to end, and only then give it the tags that say
+# it passed. Releasing (release.yml) promotes those images; it never rebuilds.
+#
+#   PR #17, run 3        1.3.0-pr.17.3    then, once e2e passes: pr-17
+#   main, run 42         1.3.0-dev.42     then, once e2e passes: dev, sha-<commit>
+#
+# The logic lives in the justfile; this file only calls it.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  pr-title:
+    name: PR title is a conventional commit
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      # Squash merges make the PR title the commit subject, which decides the
+      # next version: feat: minor, fix: patch, ! major.
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: extractions/setup-just@v4
+      - run: just verify
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: test-reports
+          path: out/reports/
+          retention-days: 14
+
+  image:
+    needs: verify
+    # A fork's PR gets a read-only token, so it can't push; verify still runs.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.version.outputs.image }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the version comes from the commits since the last tag
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+      - uses: extractions/setup-just@v4
+      - id: version
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$PR" ]; then pre="pr.$PR.$GITHUB_RUN_NUMBER"; else pre="dev.$GITHUB_RUN_NUMBER"; fi
+          version=$(just version "$pre")
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "### Version \`$version\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: just publish
+        env:
+          IMAGE: ${{ steps.version.outputs.image }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAGS: ${{ steps.version.outputs.version }}
+          PLATFORMS: linux/amd64,linux/arm64
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+
+  e2e:
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ${{ needs.image.outputs.image }}
+      VERSION: ${{ needs.image.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: extractions/setup-just@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The image under test is the one pushed above, not a fresh build.
+      - run: just e2e-image "$IMAGE:$VERSION"
+        env:
+          EXPECT_VERSION: ${{ needs.image.outputs.version }}
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-results
+          path: web/test-results/
+          retention-days: 14
+      - name: Tag the images that passed
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$PR" ]; then tags="pr-$PR"; else tags="dev,sha-${GITHUB_SHA::7}"; fi
+          just retag "$VERSION" "$tags"
+          echo "Tagged \`$VERSION\` as \`$tags\`: \`docker pull $IMAGE:${tags%%,*}\`" >> "$GITHUB_STEP_SUMMARY"

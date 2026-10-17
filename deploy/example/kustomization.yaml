@@ -1,0 +1,11 @@
+# An example of what a deploying overlay adds: the image binding (by digest,
+# from the release you're deploying) and environment settings. In practice this
+# lives wherever deployments are managed, e.g. a GitOps or release repo.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+images:
+  - name: app
+    newName: ghcr.io/spikebaylor/go-react-template
+    newTag: latest # pin a digest instead: digest: sha256:...
