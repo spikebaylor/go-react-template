@@ -41,6 +41,19 @@ just dev-api     # ... the API on :8080 ...
 just dev-web     # ... and the UI with hot reload on :5173
 ```
 
+## CI at a glance
+
+| Workflow | Runs when | Steps, in order (each needs the one before) |
+|---|---|---|
+| **CI** (`ci.yml`) | A PR is opened or pushed to | PR title is a conventional commit → `verify` → `image`: build amd64 + arm64, push as `x.y.z-pr.N.run` → `e2e` against the pushed image → tag it `pr-N` |
+| **CI** (`ci.yml`) | A push to `main` (a merge) | `verify` → `image`: push as `x.y.z-dev.run` → `e2e` → tag it `dev` and `sha-<commit>` |
+| **Release** (`release.yml`) | By hand: Actions → Release | Work out the version → find the tested `sha-` image for `main`'s head → show the notes (a *dry run* stops here) → retag as `x.y.z`, `x.y`, `latest` → tag git `vx.y.z` and publish a GitHub Release |
+| **Clean up images** (`cleanup.yml`) | A PR closes | For each image (`app`, `-api`, `-web`): delete that PR's tags |
+| **Clean up images** (`cleanup.yml`) | Weekly, or by hand | For each image: keep the 20 newest `main` builds and delete the rest; by hand with a PR number, redo that PR's cleanup instead |
+
+`verify` is `just verify`, the same command you run locally. A PR from a fork
+runs only the title check and `verify`, since its token can't push images.
+
 ## Builds and releases
 
 Every PR and every push to `main` produces versioned images; only releases
@@ -62,8 +75,8 @@ touch git.
 - To release: Actions → **Release** → Run workflow. Tick *dry run* to see the
   version and notes first. It refuses when nothing since the last release is a
   `feat`, `fix` or breaking change.
-- Cleanup: a PR's images are deleted when it closes; a weekly job keeps the 20
-  newest `main` builds. Release images are never deleted.
+- Cleanup never deletes a release: it removes tags, and an image goes only when
+  all its tags have.
 
 ## Starting a new app from this template
 
