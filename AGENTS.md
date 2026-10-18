@@ -1,7 +1,33 @@
 # AGENTS.md
 
 A Go API and a React UI, built into container images. `README.md` covers what it
-is and how it ships; this file is how to work in it.
+is and how it ships; this file is how to work in it. The decisions behind its
+shape are in `docs/adr/`: read the relevant one before changing CI, versioning,
+the images, the test database or `deploy/`.
+
+<!-- template-only: delete from here to "end template-only" in a project made from this template -->
+## Working on the template itself
+
+This repo is a template: new apps start as a copy of it, and the notes app is a
+placeholder that exists to exercise the pipeline. A change here is a change to
+every future project's starting point, so it holds to a stricter bar:
+
+- **A copy works unedited.** A repo made from the template must pass CI and
+  publish images with no edits; derive names from the repository
+  (`github.repository`), never hardcode this one. Anything a new project must
+  change goes in README.md's "Starting a new app" checklist.
+- **The decisions in `docs/adr/` are the point.** Build once and promote, the
+  justfile as the only CI interface, contract-first API, `TEST_DATABASE_URL`,
+  logical image names: these are what make the template portable to other CI
+  systems (Tekton at work) and air-gapped handovers. Changing one is a new ADR,
+  not a refactor.
+- **Keep the example small.** It earns its place by exercising a part of the
+  pipeline (database, generated client, UI, e2e); features that exercise
+  nothing new belong in real projects.
+- **Workflow changes are proven by running them.** Lint them
+  (`go run github.com/rhysd/actionlint/cmd/actionlint@latest`) and say in the
+  PR which run demonstrates the change.
+<!-- end template-only -->
 
 ## Done means `just verify` passes
 

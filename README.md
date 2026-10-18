@@ -20,6 +20,7 @@ pipeline; replace it with yours.
 | `justfile` | Every check and build. CI calls these recipes and nothing else. |
 | `tools/go.mod` | Pinned dev tools (golangci-lint, oapi-codegen, svu, gotestsum, kustomize), run with `go tool`. |
 | `AGENTS.md` | Instructions for AI agents (`CLAUDE.md` imports it). |
+| `docs/adr/` | Why it's built this way: the decisions to keep, or change deliberately. |
 
 ## Prerequisites
 
@@ -69,12 +70,14 @@ touch git.
 1. **Use this template** on GitHub, then clone it.
 2. Rename the Go module: replace `github.com/spikebaylor/go-react-template`
    everywhere (`grep -rl` it), then `go mod tidy`.
-3. In the repo's settings:
+3. Delete the "Working on the template itself" section of `AGENTS.md` (between
+   the `template-only` markers); it's for maintaining the template, not your app.
+4. In the repo's settings:
    - **General → Pull Requests**: allow squash merging only, with the default
      message set to *Pull request title*.
    - **Rules → Rulesets** for `main`: require a pull request and the status
      checks `verify`, `e2e` and `PR title is a conventional commit`.
-4. Open a PR. CI publishes images to `ghcr.io/<owner>/<repo>` (and `-api`,
+5. Open a PR. CI publishes images to `ghcr.io/<owner>/<repo>` (and `-api`,
    `-web`) with no further setup. Packages pushed from a workflow inherit the
    repository's access; make them public from the package settings if you want
    to pull without logging in.
