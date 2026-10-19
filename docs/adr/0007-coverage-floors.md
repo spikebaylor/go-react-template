@@ -13,9 +13,9 @@ is below 60%. Generated, vendored and wiring code is excluded. README.md's
 
 - **A floor, checked where everything else is.** Coverage is one more `just
   verify` step (ADR-0001), so an agent, a laptop and CI get the same answer.
-  The tools are pinned in the repo (`go-test-coverage` in `tools/go.mod`,
-  `@vitest/coverage-v8` in `web/package.json`). No coverage service is
-  involved, so the check works under Tekton and air-gapped.
+  Go is checked by `scripts/coverage.sh` over `go tool cover` (ADR-0008); the
+  web by `@vitest/coverage-v8`, pinned in `web/package.json`. No coverage
+  service is involved, so the check works under Tekton and air-gapped.
 - **85% for Go, not 90%.** The backend is thin handlers and SQL, tested
   against a real Postgres (ADR-0004), so high coverage is cheap. Most of what
   sits between 85% and 90% is `if err != nil { return err }` after a database

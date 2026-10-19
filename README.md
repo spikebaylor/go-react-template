@@ -18,8 +18,8 @@ pipeline; replace it with yours.
 | `Dockerfile`, `docker-bake.hcl` | Three images from one Dockerfile: `app` (UI embedded, one port), `app-api`, `app-web`. |
 | `deploy/base` | A kustomize base with logical image names, for whoever deploys it to bind. |
 | `justfile` | Every check and build. CI calls these recipes and nothing else. |
-| `tools/go.mod` | Pinned dev tools (golangci-lint, oapi-codegen, svu, gotestsum, go-test-coverage, kustomize), run with `go tool`. |
-| `.testcoverage.yml`, `web/vite.config.ts` | The test coverage floors `just verify` enforces; see [Test coverage](#test-coverage). |
+| `tools/go.mod` | Pinned dev tools (golangci-lint, oapi-codegen, svu, gotestsum, kustomize), run with `go tool`. |
+| `scripts/coverage.sh`, `web/vite.config.ts` | The test coverage floors `just verify` enforces; see [Test coverage](#test-coverage). |
 | `AGENTS.md` | Instructions for AI agents (`CLAUDE.md` imports it). |
 | `docs/adr/` | Why it's built this way: the decisions to keep, or change deliberately. |
 
@@ -50,7 +50,7 @@ so they work under any CI system and offline.
 
 | Side | Floor | Measured by | Configured in |
 |---|---|---|---|
-| Go | 85% of statements, in total | [go-test-coverage](https://github.com/vladopajic/go-test-coverage), on a profile from `go test -coverpkg=./...` | `.testcoverage.yml` |
+| Go | 85% of statements, in total | `scripts/coverage.sh`, using Go's own `go tool cover` on a profile from `go test -coverpkg=./...` | `scripts/coverage.sh` |
 | Web | 60% each of statements, branches, functions and lines | Vitest's v8 coverage (`npm test` runs `vitest run --coverage`) | `coverage` in `web/vite.config.ts` |
 
 `-coverpkg=./...` means a test counts toward every package it exercises, not
@@ -76,20 +76,24 @@ of the kinds above: generated, vendored or wiring.
 
 ### Changing the floors or the exclusions
 
-- **Go floor**: `threshold.total` in `.testcoverage.yml`. The tool can also set
-  per-package and per-file floors (`threshold.package`, `threshold.file`, and
-  `override` for one path); see its README.
-- **Go exclusions**: add a regular expression, matched against the path from
-  the repo root, under `exclude.paths` in `.testcoverage.yml`, with a comment
-  saying why.
+- **Go floor**: `floor` at the top of `scripts/coverage.sh`.
+- **Go exclusions**: `exclude` in `scripts/coverage.sh`, an extended regular
+  expression matched against each file's path from the repo root. Add an
+  alternative to it and a line to the comment above it saying why.
+- **Per-package floors, badges or diff coverage**: the script checks one
+  total and nothing else, on purpose. If you need more, a dedicated tool such
+  as [go-test-coverage](https://github.com/vladopajic/go-test-coverage) does it
+  at the cost of extra dependencies; `docs/adr/0008-coverage-check-is-a-script.md`
+  weighs the trade and says how to switch.
 - **Web floors**: `test.coverage.thresholds` in `web/vite.config.ts`, one number
   per metric.
 - **Web exclusions**: add a glob to `test.coverage.exclude` in
   `web/vite.config.ts`, with a comment saying why.
 
 Raise a floor once a project's coverage has settled above it; it's a floor, not
-a target. Reasons for each choice are in
-`docs/adr/0007-coverage-floors.md`.
+a target. Reasons for the numbers are in
+`docs/adr/0007-coverage-floors.md`; reasons for checking Go with a script are in
+`docs/adr/0008-coverage-check-is-a-script.md`.
 
 ### Reports
 
@@ -100,8 +104,8 @@ a target. Reasons for each choice are in
 - `web-coverage/index.html` is the web HTML report; `lcov.info` beside it is for
   editors and other tools.
 
-When the Go floor fails, the step's output lists each file with its coverage
-and uncovered lines.
+When the Go floor fails, the step's output lists the functions below 100%,
+least covered first. `go tool cover -html` shows the uncovered lines.
 
 ## CI at a glance
 

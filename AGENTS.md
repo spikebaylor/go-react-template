@@ -65,7 +65,7 @@ Generated files change only through `just generate`.
   `web/src/index.css` (`bg-background`, `text-muted-foreground`, ...), so both
   themes follow. Data goes through `web/src/api/client.ts` and TanStack Query.
 - **Coverage**: `just verify` fails below 85% Go statements
-  (`.testcoverage.yml`) or 60% of any web metric (`web/vite.config.ts`). Meet
+  (`scripts/coverage.sh`) or 60% of any web metric (`web/vite.config.ts`). Meet
   it with tests that check what your change does. Don't add an exclusion or
   lower a floor to get green; README.md's "Test coverage" says what belongs in
   the exclusions.
