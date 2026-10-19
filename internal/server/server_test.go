@@ -1,7 +1,9 @@
 package server_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -114,4 +116,53 @@ func TestUIServedOutsideAPI(t *testing.T) {
 func jsonInt(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+func TestDatabaseFailureIsA500(t *testing.T) {
+	s, err := store.Open(t.Context(), dbtest.New(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(server.New(s, "1.2.3-test", nil))
+	t.Cleanup(srv.Close)
+	s.Close()
+
+	for _, r := range []struct{ method, path, body string }{
+		{http.MethodGet, "/api/health", ""},
+		{http.MethodGet, "/api/notes", ""},
+		{http.MethodPost, "/api/notes", `{"text":"hello"}`},
+		{http.MethodDelete, "/api/notes/1", ""},
+	} {
+		if resp := do(t, r.method, srv.URL+r.path, r.body); resp.StatusCode != http.StatusInternalServerError {
+			t.Errorf("%s %s: status = %d, want 500", r.method, r.path, resp.StatusCode)
+		}
+	}
+}
+
+func TestLoggedRecordsStatus(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	h := server.Logged(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/teapot" {
+			w.WriteHeader(http.StatusTeapot)
+		}
+	}))
+	for _, path := range []string{"/teapot", "/ok"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+	}
+
+	var got []int
+	for line := range strings.Lines(buf.String()) {
+		var entry struct{ Status int }
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, entry.Status)
+	}
+	if len(got) != 2 || got[0] != http.StatusTeapot || got[1] != http.StatusOK {
+		t.Errorf("logged statuses = %v, want [418 200]", got)
+	}
 }

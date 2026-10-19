@@ -58,3 +58,15 @@ func TestOpenIsIdempotent(t *testing.T) {
 		s.Close()
 	}
 }
+
+func TestOpenFailsWithoutADatabase(t *testing.T) {
+	for name, url := range map[string]string{
+		"malformed":   "postgres://%zz",
+		"unreachable": "postgres://app@127.0.0.1:1/app?connect_timeout=1",
+	} {
+		if s, err := store.Open(t.Context(), url); err == nil {
+			s.Close()
+			t.Errorf("%s: Open(%q) succeeded, want an error", name, url)
+		}
+	}
+}

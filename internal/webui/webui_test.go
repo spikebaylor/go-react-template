@@ -26,3 +26,10 @@ func TestSPAFallsBackToIndex(t *testing.T) {
 		}
 	}
 }
+
+// Tests run without the embedui tag, so there's no UI to serve.
+func TestHandlerIsNilWithoutTheUI(t *testing.T) {
+	if Handler() != nil {
+		t.Error("Handler() is non-nil in a build without embedui")
+	}
+}

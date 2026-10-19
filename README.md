@@ -19,6 +19,7 @@ pipeline; replace it with yours.
 | `deploy/base` | A kustomize base with logical image names, for whoever deploys it to bind. |
 | `justfile` | Every check and build. CI calls these recipes and nothing else. |
 | `tools/go.mod` | Pinned dev tools (golangci-lint, oapi-codegen, svu, gotestsum, kustomize), run with `go tool`. |
+| `scripts/coverage.sh`, `web/vite.config.ts` | The test coverage floors `just verify` enforces; see [Test coverage](#test-coverage). |
 | `AGENTS.md` | Instructions for AI agents (`CLAUDE.md` imports it). |
 | `docs/adr/` | Why it's built this way: the decisions to keep, or change deliberately. |
 
@@ -40,6 +41,71 @@ just dev-db      # dev loop: Postgres on :5432 ...
 just dev-api     # ... the API on :8080 ...
 just dev-web     # ... and the UI with hot reload on :5173
 ```
+
+## Test coverage
+
+`just verify` fails when coverage drops below a floor, the same way locally and
+in CI. There's no coverage service: the floors are checked by tools in the repo,
+so they work under any CI system and offline.
+
+| Side | Floor | Measured by | Configured in |
+|---|---|---|---|
+| Go | 85% of statements, in total | `scripts/coverage.sh`, using Go's own `go tool cover` on a profile from `go test -coverpkg=./...` | `scripts/coverage.sh` |
+| Web | 60% each of statements, branches, functions and lines | Vitest's v8 coverage (`npm test` runs `vitest run --coverage`) | `coverage` in `web/vite.config.ts` |
+
+`-coverpkg=./...` means a test counts toward every package it exercises, not
+only its own: the server tests cover the store, as they do in the running app.
+
+### What's excluded, and why
+
+The floors measure code we write and can test sensibly. These are left out:
+
+| Excluded | Side | Why |
+|---|---|---|
+| `internal/api/` | Go | Generated from `api/openapi.yaml` by `just generate`. Its coverage depends on how it's measured, not on our tests. |
+| `internal/dbtest/` | Go | Test scaffolding: it only ever runs inside tests. |
+| `cmd/` | Go | Startup wiring and signal handling. Unit testing it would mean restructuring `main`, and `just e2e` runs it in the real image. |
+| `src/components/ui/**` | Web | shadcn/ui components, copied in by `npx shadcn add`. Their behavior is upstream's; test the screens that use them. |
+| `src/api/schema.d.ts` | Web | Generated types (no runtime code). |
+| `src/main.tsx` | Web | Only mounts `<App />`; `just e2e` runs it in a browser. |
+| Test files | Both | Not part of the app. |
+
+Code that's hard to reach is not a reason to exclude it. When a change drops
+coverage below a floor, add tests for what the change does. Exclude only code
+of the kinds above: generated, vendored or wiring.
+
+### Changing the floors or the exclusions
+
+- **Go floor**: `floor` at the top of `scripts/coverage.sh`.
+- **Go exclusions**: `exclude` in `scripts/coverage.sh`, an extended regular
+  expression matched against each file's path from the repo root. Add an
+  alternative to it and a line to the comment above it saying why.
+- **Per-package floors, badges or diff coverage**: the script checks one
+  total and nothing else, on purpose. If you need more, a dedicated tool such
+  as [go-test-coverage](https://github.com/vladopajic/go-test-coverage) does it
+  at the cost of extra dependencies; `docs/adr/0008-coverage-check-is-a-script.md`
+  weighs the trade and says how to switch.
+- **Web floors**: `test.coverage.thresholds` in `web/vite.config.ts`, one number
+  per metric.
+- **Web exclusions**: add a glob to `test.coverage.exclude` in
+  `web/vite.config.ts`, with a comment saying why.
+
+Raise a floor once a project's coverage has settled above it; it's a floor, not
+a target. Reasons for the numbers are in
+`docs/adr/0007-coverage-floors.md`; reasons for checking Go with a script are in
+`docs/adr/0008-coverage-check-is-a-script.md`.
+
+### Reports
+
+`just verify` writes them to `out/reports/`, which CI uploads as the
+`test-reports` artifact:
+
+- `go-coverage.out` is the Go profile: `go tool cover -html=out/reports/go-coverage.out`.
+- `web-coverage/index.html` is the web HTML report; `lcov.info` beside it is for
+  editors and other tools.
+
+When the Go floor fails, the step's output lists the functions below 100%,
+least covered first. `go tool cover -html` shows the uncovered lines.
 
 ## CI at a glance
 
@@ -90,7 +156,10 @@ touch git.
      message set to *Pull request title*.
    - **Rules → Rulesets** for `main`: require a pull request and the status
      checks `verify`, `e2e` and `PR title is a conventional commit`.
-5. Open a PR. CI publishes images to `ghcr.io/<owner>/<repo>` (and `-api`,
+5. Check the test coverage floors suit the project (85% Go, 60% web; see
+   [Test coverage](#test-coverage)). They pass as shipped, so there's
+   nothing to change unless you want different numbers.
+6. Open a PR. CI publishes images to `ghcr.io/<owner>/<repo>` (and `-api`,
    `-web`) with no further setup. Packages pushed from a workflow inherit the
    repository's access; make them public from the package settings if you want
    to pull without logging in.

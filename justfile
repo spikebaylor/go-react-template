@@ -13,9 +13,11 @@ default:
 
 # Everything CI checks before building an image. Run it before calling work done.
 verify: _web-deps
+    @mkdir -p out/reports
     @{{step}} "Generated code is current" just _check-generated
     @{{step}} "Go lint" {{go_tool}} golangci-lint run ./...
-    @{{step}} "Go tests" {{go_tool}} gotestsum --junitfile out/reports/go-junit.xml -- ./...
+    @{{step}} "Go tests" {{go_tool}} gotestsum --junitfile out/reports/go-junit.xml -- -coverpkg=./... -coverprofile=out/reports/go-coverage.out ./...
+    @{{step}} "Go coverage" scripts/coverage.sh out/reports/go-coverage.out
     @{{step}} "Kubernetes manifests render" {{go_tool}} kustomize build deploy/example -o /dev/null
     @{{step}} "Web typecheck" npm --prefix web run typecheck
     @{{step}} "Web lint" npm --prefix web run lint
