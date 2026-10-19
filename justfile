@@ -13,6 +13,7 @@ default:
 
 # Everything CI checks before building an image. Run it before calling work done.
 verify: _web-deps
+    @mkdir -p out/reports
     @{{step}} "Generated code is current" just _check-generated
     @{{step}} "Go lint" {{go_tool}} golangci-lint run ./...
     @{{step}} "Go tests" {{go_tool}} gotestsum --junitfile out/reports/go-junit.xml -- -coverpkg=./... -coverprofile=out/reports/go-coverage.out ./...
