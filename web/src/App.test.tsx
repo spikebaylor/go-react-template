@@ -21,6 +21,11 @@ function fakeFetch(request: Request): Response {
     return json({ status: "ok", version: "1.2.3" })
   if (url.pathname === "/api/notes" && request.method === "GET")
     return json(notes)
+  if (url.pathname.startsWith("/api/notes/") && request.method === "DELETE") {
+    const id = Number(url.pathname.split("/").pop())
+    notes = notes.filter((n) => n.id !== id)
+    return new Response(null, { status: 204 })
+  }
   return new Response(null, { status: 404 })
 }
 
@@ -71,4 +76,52 @@ test("adds a note", async () => {
 
   expect(await screen.findByText("brand new")).toBeInTheDocument()
   expect(screen.getByLabelText("New note")).toHaveValue("")
+})
+
+test("deletes a note", async () => {
+  renderApp()
+
+  await userEvent.click(
+    await screen.findByRole("button", { name: 'Delete "existing note"' }),
+  )
+
+  expect(await screen.findByText("No notes yet.")).toBeInTheDocument()
+  expect(screen.queryByText("existing note")).not.toBeInTheDocument()
+})
+
+test("shows why the server rejected a note", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: Request) =>
+      input.method === "POST"
+        ? new Response(
+            JSON.stringify({ message: "text must be 1 to 500 characters" }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/problem+json" },
+            },
+          )
+        : fakeFetch(input),
+    ),
+  )
+  renderApp()
+  await screen.findByText("existing note")
+
+  await userEvent.type(screen.getByLabelText("New note"), "rejected")
+  await userEvent.click(screen.getByRole("button", { name: "Add" }))
+
+  expect(
+    await screen.findByText("text must be 1 to 500 characters"),
+  ).toBeInTheDocument()
+  expect(screen.getByLabelText("New note")).toHaveValue("rejected")
+})
+
+test("says when notes can't be loaded", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(null, { status: 500 })),
+  )
+  renderApp()
+
+  expect(await screen.findByText("Could not load notes.")).toBeInTheDocument()
 })

@@ -20,5 +20,24 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}"],
     reporters: process.env.CI ? ["default", "junit"] : ["default"],
     outputFile: { junit: "../out/reports/web-junit.xml" },
+    // The web coverage floor `just verify` enforces. README.md's "Test
+    // coverage" section explains the numbers and the exclusions.
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/test-setup.ts",
+        // Copied in by `npx shadcn add`; not code we write.
+        "src/components/ui/**",
+        // Generated from api/openapi.yaml by `just generate`.
+        "src/api/schema.d.ts",
+        // Only mounts <App />; `just e2e` runs it in a real browser.
+        "src/main.tsx",
+      ],
+      reporter: ["text-summary", "html", "lcov"],
+      reportsDirectory: "../out/reports/web-coverage",
+      thresholds: { statements: 60, branches: 60, functions: 60, lines: 60 },
+    },
   },
 })

@@ -1,0 +1,16 @@
+# The Go coverage floor `just verify` enforces (go-test-coverage, pinned in
+# tools/go.mod). README.md's "Test coverage" section explains the numbers and
+# the exclusions; docs/adr/0007-coverage-floors.md records why.
+profile: out/reports/go-coverage.out
+
+threshold:
+  total: 85
+
+exclude:
+  paths:
+    # Generated from api/openapi.yaml by `just generate`; not code we write.
+    - ^internal/api/
+    # Test scaffolding: it only ever runs inside tests.
+    - ^internal/dbtest/
+    # Startup wiring and signal handling; `just e2e` runs it in the real image.
+    - ^cmd/
